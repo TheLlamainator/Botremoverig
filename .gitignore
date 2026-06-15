@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+ig_cache/
+removed_followers_log.txt
+.env
