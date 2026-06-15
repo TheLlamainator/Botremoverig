@@ -80,7 +80,22 @@ python3 bot_remover.py --batch-size 25            # smaller review batches
 python3 bot_remover.py --delay-min 5 --delay-max 12
 python3 bot_remover.py --posts-to-check 50        # scan more posts for engagement
 python3 bot_remover.py --reset-cache              # refetch all follower/engagement data
+
+# Only scan the ~6000 followers that came after a known "boundary" account
+# in Instagram's follower ordering (most-recently-followed first), e.g. if
+# you know a bot wave happened right before a specific real follower:
+python3 bot_remover.py --anchor-username leah_bytes --anchor-window 6000
 ```
+
+### Anchor-based scanning
+
+`--anchor-username` finds that account in your followers list and restricts
+the scan to the accounts that follow it in Instagram's ordering (which, in
+practice, tends to be most-recently-followed first). Combined with
+`--anchor-window`, this lets you target a suspected bot wave that happened
+just before/after a specific real follower, without scanning your entire
+followers list. Note: this ordering is observed behavior, not something
+Instagram documents or guarantees.
 
 ## Files created
 

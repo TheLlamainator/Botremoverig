@@ -289,6 +289,36 @@ def fetch_followers(cl):
     return followers
 
 
+def select_by_anchor(followers, anchor_username, window_size):
+    """Restrict the followers dict to a window of accounts that appear after
+    a given "anchor" account in Instagram's follower ordering.
+
+    Instagram's followers endpoint tends to return followers most-recently-followed
+    first (this is observed behavior, not a documented guarantee). If a known-good
+    account marks the boundary of a bot wave, the suspected bots are the accounts
+    that follow it in that ordering.
+
+    Returns (selected_followers, anchor_pk) or (None, None) if the anchor
+    username isn't found in the followers list.
+    """
+    items = list(followers.items())
+    anchor_index = None
+    anchor_pk = None
+    for i, (pk, short) in enumerate(items):
+        if (short.username or "").lower() == anchor_username.lower():
+            anchor_index = i
+            anchor_pk = pk
+            break
+
+    if anchor_index is None:
+        return None, None
+
+    start = anchor_index + 1
+    end = start + window_size
+    selected = dict(items[start:end])
+    return selected, anchor_pk
+
+
 def fetch_follower_details(cl, followers, cache):
     pks = list(followers.keys())
     total = len(pks)
@@ -512,6 +542,12 @@ def parse_args():
                          help="Show what would be removed without actually removing anything")
     parser.add_argument("--reset-cache", action="store_true",
                          help="Ignore cached follower/engagement data and refetch everything")
+    parser.add_argument("--anchor-username", type=str, default=None,
+                         help="Only scan the followers that come after this account in Instagram's "
+                              "follower ordering (most-recently-followed first). Use this when you "
+                              "know roughly which follower marks the edge of a bot wave.")
+    parser.add_argument("--anchor-window", type=int, default=6000,
+                         help="How many followers after --anchor-username to scan (default: 6000)")
     return parser.parse_args()
 
 
@@ -539,6 +575,20 @@ def main():
     followers = fetch_followers(cl)
     if shutdown_requested:
         return
+
+    if args.anchor_username:
+        selected, anchor_pk = select_by_anchor(followers, args.anchor_username, args.anchor_window)
+        if selected is None:
+            print(f"\n[!] Could not find @{args.anchor_username} in your followers list. "
+                  "Double-check the username and try again.")
+            return
+        print(
+            f"\nFound @{args.anchor_username}. Restricting the scan to the "
+            f"{len(selected)} follower(s) after them in Instagram's follower "
+            f"ordering (most-recent-first - this ordering is observed behavior, "
+            f"not guaranteed by Instagram)."
+        )
+        followers = selected
 
     details_cache = load_json(FOLLOWERS_CACHE, {})
     details_cache = fetch_follower_details(cl, followers, details_cache)
