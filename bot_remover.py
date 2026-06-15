@@ -34,6 +34,7 @@ CACHE_DIR = "ig_cache"
 SESSION_FILE = os.path.join(CACHE_DIR, "session.json")
 FOLLOWERS_CACHE = os.path.join(CACHE_DIR, "followers_info.json")
 WHITELIST_CACHE = os.path.join(CACHE_DIR, "interaction_whitelist.json")
+FOLLOWING_CACHE = os.path.join(CACHE_DIR, "following.json")
 REMOVED_LOG = "removed_followers_log.txt"
 
 DEFAULT_BATCH_SIZE = 50
@@ -394,13 +395,32 @@ def build_interaction_whitelist(cl, posts_to_check, cached_whitelist):
     return whitelist
 
 
+def fetch_following(cl, cached_following):
+    if cached_following is not None:
+        print(f"Using cached list of {len(cached_following)} accounts you follow.")
+        return set(cached_following)
+
+    print("\nFetching the list of accounts you follow (these will never be removed)...")
+    try:
+        following = safe_api_call(cl.user_following, cl.user_id)
+    except Exception as e:
+        print(f"  [!] Could not fetch your following list ({e}). "
+              "Accounts you follow won't be specially protected this run.")
+        return set()
+
+    following_pks = set(following.keys())
+    save_json(FOLLOWING_CACHE, list(following_pks))
+    return following_pks
+
+
 # ---------------------------------------------------------------------------
 # Analysis
 # ---------------------------------------------------------------------------
-def analyze(followers, details_cache, whitelist, threshold, new_account_days):
+def analyze(followers, details_cache, whitelist, following, threshold, new_account_days):
     flagged = []
     skipped_no_data = 0
     skipped_whitelisted = 0
+    skipped_mutual = 0
 
     for pk, short in followers.items():
         info = details_cache.get(str(pk))
@@ -410,6 +430,10 @@ def analyze(followers, details_cache, whitelist, threshold, new_account_days):
 
         if int(pk) in whitelist:
             skipped_whitelisted += 1
+            continue
+
+        if int(pk) in following:
+            skipped_mutual += 1
             continue
 
         reasons = compute_bot_flags(info, new_account_days)
@@ -423,7 +447,7 @@ def analyze(followers, details_cache, whitelist, threshold, new_account_days):
             })
 
     flagged.sort(key=lambda a: -a["score"])
-    return flagged, skipped_no_data, skipped_whitelisted
+    return flagged, skipped_no_data, skipped_whitelisted, skipped_mutual
 
 
 def print_flagged_summary(flagged):
@@ -548,6 +572,9 @@ def parse_args():
                               "know roughly which follower marks the edge of a bot wave.")
     parser.add_argument("--anchor-window", type=int, default=6000,
                          help="How many followers after --anchor-username to scan (default: 6000)")
+    parser.add_argument("--list-only", action="store_true",
+                         help="Just analyze and print the flagged accounts, then exit. "
+                              "No removal prompts, nothing is removed.")
     return parser.parse_args()
 
 
@@ -565,7 +592,7 @@ def main():
     print("This tool only removes accounts you explicitly approve.\n")
 
     if args.reset_cache:
-        for path in (FOLLOWERS_CACHE, WHITELIST_CACHE):
+        for path in (FOLLOWERS_CACHE, WHITELIST_CACHE, FOLLOWING_CACHE):
             if os.path.exists(path):
                 os.remove(path)
         print("Cleared cached follower/engagement data.\n")
@@ -601,18 +628,29 @@ def main():
     if shutdown_requested:
         return
 
-    flagged, skipped_no_data, skipped_whitelisted = analyze(
-        followers, details_cache, whitelist, args.threshold, args.new_account_days
+    cached_following = load_json(FOLLOWING_CACHE, None)
+    following = fetch_following(cl, cached_following)
+    if shutdown_requested:
+        return
+
+    flagged, skipped_no_data, skipped_whitelisted, skipped_mutual = analyze(
+        followers, details_cache, whitelist, following, args.threshold, args.new_account_days
     )
 
     print(f"\nAnalyzed {len(followers)} followers.")
     if skipped_whitelisted:
         print(f"  - {skipped_whitelisted} account(s) skipped: they liked/commented on your posts.")
+    if skipped_mutual:
+        print(f"  - {skipped_mutual} account(s) skipped: you follow them back.")
     if skipped_no_data:
         print(f"  - {skipped_no_data} account(s) skipped: profile data unavailable.")
 
     print_flagged_summary(flagged)
     if not flagged:
+        return
+
+    if args.list_only:
+        print("\n(--list-only: nothing was removed.)")
         return
 
     proceed = input(

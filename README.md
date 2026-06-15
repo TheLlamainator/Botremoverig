@@ -43,6 +43,9 @@ in again on future runs.
    resume if interrupted).
 3. **Engagement whitelist** - checks your most recent posts for likes and
    comments; anyone who has ever engaged is never flagged for removal.
+3b. **Mutual-follow protection** - fetches the accounts you follow; anyone
+   you follow back is never flagged for removal, even if they'd otherwise
+   match the bot signals.
 4. **Bot detection** - flags an account if enough of these are true:
    - No profile picture
    - Fewer than 3 posts
@@ -74,7 +77,8 @@ in again on future runs.
 ### Useful flags
 
 ```bash
-python3 bot_remover.py --dry-run                  # preview only, removes nothing
+python3 bot_remover.py --list-only                # just show flagged accounts, remove nothing
+python3 bot_remover.py --dry-run                  # walk through the removal flow without removing
 python3 bot_remover.py --threshold 4              # require more signals before flagging
 python3 bot_remover.py --batch-size 25            # smaller review batches
 python3 bot_remover.py --delay-min 5 --delay-max 12
@@ -102,6 +106,7 @@ Instagram documents or guarantees.
 - `ig_cache/session.json` - saved login session
 - `ig_cache/followers_info.json` - cached follower profile data
 - `ig_cache/interaction_whitelist.json` - accounts that liked/commented on your posts
+- `ig_cache/following.json` - accounts you currently follow (never removed)
 - `removed_followers_log.txt` - timestamped log of every removal
 
 None of these are committed to git (see `.gitignore`).
